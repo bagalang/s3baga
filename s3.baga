@@ -174,19 +174,57 @@ fn s3_host_header(host: str, port: i64, https: i64) -> str {
     return concat(concat(host, ":"), int_to_str(port))
 }
 
-fn s3_call(method: str, key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
-    let endpoint = str_trim(env("S3_ENDPOINT")?)
-    let bucket = str_trim(env("S3_BUCKET")?)
-    let access = env("S3_ACCESS_KEY")?
-    let secret = env("S3_SECRET_KEY")?
+struct S3Cfg {
+    endpoint: str,
+    bucket: str,
+    access: str,
+    secret: str,
+    region: str,
+    timeout_s: i64
+}
+
+fn s3_cfg(endpoint: str, bucket: str, access: str, secret: str, region: str, timeout_s: i64) -> S3Cfg {
+    return S3Cfg {
+        endpoint: endpoint,
+        bucket: bucket,
+        access: access,
+        secret: secret,
+        region: region,
+        timeout_s: timeout_s
+    }
+}
+
+fn s3_cfg_env() -> S3Cfg !IO {
+    return s3_cfg(
+        str_trim(env("S3_ENDPOINT")?),
+        str_trim(env("S3_BUCKET")?),
+        env("S3_ACCESS_KEY")?,
+        env("S3_SECRET_KEY")?,
+        s3_region()?,
+        s3_timeout()?
+    )
+}
+
+fn s3_call_cfg(cfg: S3Cfg, method: str, key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
+    let endpoint = str_trim(cfg.endpoint)
+    let bucket = str_trim(cfg.bucket)
+    let access = cfg.access
+    let secret = cfg.secret
     if endpoint == "" || bucket == "" || access == "" || secret == "" {
-        return s3_fail("s3: missing S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY or S3_SECRET_KEY")
+        return s3_fail("s3: missing endpoint, bucket, access key or secret key")
     }
     let u = http_parse_url(endpoint)
     if u.ok == 0 {
-        return s3_fail("s3: bad S3_ENDPOINT")
+        return s3_fail("s3: bad endpoint")
     }
-    let region = s3_region()?
+    let mut region = str_trim(cfg.region)
+    if region == "" {
+        region = "us-east-1"
+    }
+    let mut timeout = cfg.timeout_s
+    if timeout < 1 {
+        timeout = 30
+    }
     let host = s3_host_header(u.host, u.port, u.https)
     let uri = concat(concat(concat("/", bucket), "/"), key)
     let amz = s3_amz_date(time_now_ms() / 1000)
@@ -206,35 +244,64 @@ fn s3_call(method: str, key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
     h = concat(h, "\r\nContent-Length: ")
     h = concat(h, int_to_str(bytes_len(body)))
     h = concat(h, "\r\nConnection: close\r\n\r\n")
-    return s3_exchange(u.host, u.https, u.port, h, body, s3_timeout()?)?
+    return s3_exchange(u.host, u.https, u.port, h, body, timeout)?
 }
 
-fn s3_put(key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
-    let r = s3_call("PUT", key, body)?
+fn s3_call(method: str, key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
+    return s3_call_cfg(s3_cfg_env()?, method, key, body)?
+}
+
+fn s3_put_cfg(cfg: S3Cfg, key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
+    let r = s3_call_cfg(cfg, "PUT", key, body)?
     if r.ok == 0 {
         return r
     }
-    if r.status == 200 || r.status == 204 {
+    if r.status == 200 {
+        return r
+    }
+    if r.status == 204 {
         return r
     }
     return S3Out { ok: 0, status: r.status, body: r.body, err: concat("s3: put ", int_to_str(r.status)) }
 }
 
-fn s3_get(key: str) -> S3Out !Net !IO !Random !Time {
-    return s3_call("GET", key, bytes_new(0))?
+fn s3_put(key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
+    return s3_put_cfg(s3_cfg_env()?, key, body)?
 }
 
-fn s3_delete(key: str) -> S3Out !Net !IO !Random !Time {
-    let r = s3_call("DELETE", key, bytes_new(0))?
+fn s3_get_cfg(cfg: S3Cfg, key: str) -> S3Out !Net !IO !Random !Time {
+    return s3_call_cfg(cfg, "GET", key, bytes_new(0))?
+}
+
+fn s3_get(key: str) -> S3Out !Net !IO !Random !Time {
+    return s3_get_cfg(s3_cfg_env()?, key)?
+}
+
+fn s3_delete_cfg(cfg: S3Cfg, key: str) -> S3Out !Net !IO !Random !Time {
+    let r = s3_call_cfg(cfg, "DELETE", key, bytes_new(0))?
     if r.ok == 0 {
         return r
     }
-    if r.status == 200 || r.status == 204 || r.status == 404 {
+    if r.status == 200 {
+        return S3Out { ok: 1, status: r.status, body: bytes_new(0), err: "" }
+    }
+    if r.status == 204 {
+        return S3Out { ok: 1, status: r.status, body: bytes_new(0), err: "" }
+    }
+    if r.status == 404 {
         return S3Out { ok: 1, status: r.status, body: bytes_new(0), err: "" }
     }
     return S3Out { ok: 0, status: r.status, body: r.body, err: concat("s3: delete ", int_to_str(r.status)) }
 }
 
+fn s3_delete(key: str) -> S3Out !Net !IO !Random !Time {
+    return s3_delete_cfg(s3_cfg_env()?, key)?
+}
+
+fn s3_head_cfg(cfg: S3Cfg, key: str) -> S3Out !Net !IO !Random !Time {
+    return s3_call_cfg(cfg, "HEAD", key, bytes_new(0))?
+}
+
 fn s3_head(key: str) -> S3Out !Net !IO !Random !Time {
-    return s3_call("HEAD", key, bytes_new(0))?
+    return s3_head_cfg(s3_cfg_env()?, key)?
 }
