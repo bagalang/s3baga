@@ -8,6 +8,7 @@ import "std/str/str.baga"
 import "std/bytes/bytes.baga"
 import "std/os/os.baga"
 import "std/time/time.baga"
+import "std/crypto/pkey.baga"
 
 struct S3Out {
     ok: i64,
@@ -131,6 +132,52 @@ fn s3_read_tcp(fd: i64) -> bytes !Net !IO {
     return buf
 }
 
+// Let's Encrypt YR1 — прекият издател на листовия сертификат на
+// s3.*.backblazeb2.com. Клиентът пази само листото, затова котвата е
+// издателят (същият подход като ЕЦБ в bagabuch). При ротация:
+// S3_TLS_ANCHOR_FILE=<pem път>.
+fn s3_anchor_pem() -> str {
+    let mut s = "-----BEGIN CERTIFICATE-----\n"
+    s = concat(s, "MIIE2zCCAsOgAwIBAgIRAKICU/FfJpHAXcHOE7m8yk4wDQYJKoZIhvcNAQELBQAw\n")
+    s = concat(s, "LjELMAkGA1UEBhMCVVMxDTALBgNVBAoTBElTUkcxEDAOBgNVBAMTB1Jvb3QgWVIw\n")
+    s = concat(s, "HhcNMjUwOTAzMDAwMDAwWhcNMjgwOTAyMjM1OTU5WjAzMQswCQYDVQQGEwJVUzEW\n")
+    s = concat(s, "MBQGA1UEChMNTGV0J3MgRW5jcnlwdDEMMAoGA1UEAxMDWVIxMIIBIjANBgkqhkiG\n")
+    s = concat(s, "9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoVi8X2xCYgMXvJxNPKp/oF13UMgmPABB07VC\n")
+    s = concat(s, "LNDtoXmt9luEZNJSBV10VyT1Pz6LD8Zq1d2gc43WNl1AdRrj4sEnazbOiz0nPpmG\n")
+    s = concat(s, "Bp2hui49oZtDIY6wdKeZAi5BbNU20CH6RSBBMLSQ9cXrH8dxdv4PAJ45ssGML68U\n")
+    s = concat(s, "SE3BsjC2a6cAN9L5CgXVIQi5tfNiTPoFZZ3S0OlXqLmmtdV95udWAb5b6e/F49Di\n")
+    s = concat(s, "CsH0Y00Ag72BVIb1hzynmKe+X0mERBTtsb3BwmpV9ipeBjMLoR/D9cHxHQCWoi5l\n")
+    s = concat(s, "TmXwY015J5rGelz1nZjJuxc2kioaX29XJBnhMkP531rSdG5uMwIDAQABo4HuMIHr\n")
+    s = concat(s, "MA4GA1UdDwEB/wQEAwIBhjATBgNVHSUEDDAKBggrBgEFBQcDATASBgNVHRMBAf8E\n")
+    s = concat(s, "CDAGAQH/AgEAMB0GA1UdDgQWBBQfLzW+RhSCzUCxrnksVXj699Ro+zAfBgNVHSME\n")
+    s = concat(s, "GDAWgBTe51tg0CJtQCh9Pw0B/qS1UrRRlDAyBggrBgEFBQcBAQQmMCQwIgYIKwYB\n")
+    s = concat(s, "BQUHMAKGFmh0dHA6Ly95ci5pLmxlbmNyLm9yZy8wEwYDVR0gBAwwCjAIBgZngQwB\n")
+    s = concat(s, "AgEwJwYDVR0fBCAwHjAcoBqgGIYWaHR0cDovL3lyLmMubGVuY3Iub3JnLzANBgkq\n")
+    s = concat(s, "hkiG9w0BAQsFAAOCAgEA0+zvMq3kHig1ddTmmm+RibTr9/RpX7k4buanMMRqbV/y\n")
+    s = concat(s, "IvP82zAHN3mvaw+cASuVsdpd0ikjhr4hnhJQLQOzOp2ccKrsdGOAgo0vddeISFAq\n")
+    s = concat(s, "EWEV4lmUM3vFF796up+bSgmJ1u6RupDCMxDgF8M3eLvGuj6L0lu3zkQ0KuQLnKxL\n")
+    s = concat(s, "tB0oQqn1Idg5CuuGpMvQzk29Pa3D/qHurc0EIM9SxukQuJqq63lxsYyRQFU8yMBO\n")
+    s = concat(s, "hq1w5LbfaWNRrz1uklOfI/pYkAb2E2MTZrAMQkBIE2S8Jt1F8gRc96o/xOsrgvSk\n")
+    s = concat(s, "a84AisX6xq1lz1Z7jGvrnXc4TMcjxZTjiTaihcYI1JIXZiLtEMSCa5l3cu8YWd6z\n")
+    s = concat(s, "dLRQlqRdclVjuQfNHawRJ6GWlkK0QJosivTKwdBw3KxEtzGo8yMHERbsy57gP1UX\n")
+    s = concat(s, "HOMcmZYQC0gtyR3SxfenIM/MxC3Ia2Ypab/kQ/CTnlIn2KQ5JUC6NYrGCbhFN9bp\n")
+    s = concat(s, "5lKJStEwCUnLpntcrXk5XVDCNv/5RyWpRThkGOV7GetKkQ0qAY8hCzWK6oqnAhDZ\n")
+    s = concat(s, "cjlYVdWfqOw3DIOX6EDNBgAqHarRVxyF9QZdOaXSyPJ0ueD2BYJEBgaCGQ8rAaU/\n")
+    s = concat(s, "Qc123V5LTXDZW4CcsPBDyhy4v+c8hClAyw/IkJlfBqxB9D+/wvIMHgECZ4ptP6o=\n")
+    return concat(s, "-----END CERTIFICATE-----\n")
+}
+
+fn s3_anchor_der() -> bytes !IO {
+    let f = str_trim(env("S3_TLS_ANCHOR_FILE")?)
+    if f != "" {
+        if file_readable(f)? == 1 {
+            let pem = read_file(f)?
+            return pem_der_block(pem, "CERTIFICATE")
+        }
+    }
+    return pem_der_block(s3_anchor_pem(), "CERTIFICATE")
+}
+
 fn s3_exchange(url_host: str, https: i64, port: i64, header: str, body: bytes, timeout: i64) -> S3Out !Net !IO !Random {
     let wire = bytes_concat(bytes_of_str(header), body)
     if https == 0 {
@@ -147,9 +194,14 @@ fn s3_exchange(url_host: str, https: i64, port: i64, header: str, body: bytes, t
         tcp_close(fd)?
         return s3_parse(buf)
     }
-    let conn = tls_connect(url_host, port, timeout, bytes_new(0))?
+    let anchor = s3_anchor_der()?
+    let conn = tls_connect(url_host, port, timeout, anchor)?
     if conn.ok == 0 {
-        return s3_fail("s3: tls failed")
+        let mut why = conn.err
+        if why == "" {
+            why = "tls failed"
+        }
+        return s3_fail(concat("s3: ", why))
     }
     let sent = tls_conn_write(conn, wire)?
     if sent.ok == 0 {
