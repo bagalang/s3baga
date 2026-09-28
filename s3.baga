@@ -357,3 +357,63 @@ fn s3_head_cfg(cfg: S3Cfg, key: str) -> S3Out !Net !IO !Random !Time {
 fn s3_head(key: str) -> S3Out !Net !IO !Random !Time {
     return s3_head_cfg(s3_cfg_env()?, key)?
 }
+
+// GET /{bucket}?query. query е вече каноничен (подреден и escape-нат).
+fn s3_get_query(cfg: S3Cfg, query: str) -> S3Out !Net !IO !Random !Time {
+    let endpoint = str_trim(cfg.endpoint)
+    let bucket = str_trim(cfg.bucket)
+    let access = cfg.access
+    let secret = cfg.secret
+    if endpoint == "" || bucket == "" || access == "" || secret == "" {
+        return s3_fail("s3: missing endpoint, bucket, access key or secret key")
+    }
+    let u = http_parse_url(endpoint)
+    if u.ok == 0 {
+        return s3_fail("s3: bad endpoint")
+    }
+    let mut region = str_trim(cfg.region)
+    if region == "" {
+        region = "us-east-1"
+    }
+    let mut timeout = cfg.timeout_s
+    if timeout < 1 {
+        timeout = 30
+    }
+    let host = s3_host_header(u.host, u.port, u.https)
+    let uri = concat("/", bucket)
+    let body = bytes_new(0)
+    let amz = s3_amz_date(time_now_ms() / 1000)
+    let ph = s3_payload_hash(body)
+    let auth = s3_authorization_q(access, secret, region, "GET", uri, query, host, amz, ph)
+    let mut target = uri
+    if query != "" {
+        target = concat(concat(uri, "?"), query)
+    }
+    let mut h = "GET "
+    h = concat(h, target)
+    h = concat(h, " HTTP/1.1\r\nHost: ")
+    h = concat(h, host)
+    h = concat(h, "\r\nx-amz-date: ")
+    h = concat(h, amz)
+    h = concat(h, "\r\nx-amz-content-sha256: ")
+    h = concat(h, ph)
+    h = concat(h, "\r\nAuthorization: ")
+    h = concat(h, auth)
+    h = concat(h, "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    return s3_exchange(u.host, u.https, u.port, h, body, timeout)?
+}
+
+fn s3_list_query(prefix: str, token: str) -> str {
+    let p = s3_query_escape(prefix)
+    let mut q = ""
+    if token != "" {
+        q = concat("continuation-token=", s3_query_escape(token))
+        q = concat(q, "&")
+    }
+    q = concat(q, "list-type=2&max-keys=1000&prefix=")
+    return concat(q, p)
+}
+
+fn s3_list_cfg(cfg: S3Cfg, prefix: str, token: str) -> S3Out !Net !IO !Random !Time {
+    return s3_get_query(cfg, s3_list_query(prefix, token))?
+}
