@@ -108,14 +108,68 @@ fn s3_parse(buf: bytes) -> S3Out {
     }
     let status = s3_status_of(line)
     let mut body = bytes_slice(buf, end + 4, bytes_len(buf))
-    let cl = s3_header_val(head, "content-length")
-    if cl != "" {
-        let n = parse_int(cl)
-        if n >= 0 && n <= bytes_len(body) {
-            body = bytes_slice(body, 0, n)
+    let te = s3_header_val(head, "transfer-encoding")
+    if str_find(s3_lower(te), "chunked") >= 0 {
+        // A3 (closed 2026-10-31): chunked transfer-encoding decode
+        body = s3_decode_chunked(body)
+    } else {
+        let cl = s3_header_val(head, "content-length")
+        if cl != "" {
+            let n = parse_int(cl)
+            if n >= 0 && n <= bytes_len(body) {
+                body = bytes_slice(body, 0, n)
+            }
         }
     }
     return S3Out { ok: 1, status: status, body: body, err: "" }
+}
+
+// A3: декодира chunked body (RFC 9112 §7.1): <hex size>\r\n<data>\r\n ... 0\r\n\r\n
+fn s3_decode_chunked(buf: bytes) -> bytes {
+    let mut out = bytes_new(0)
+    let n = bytes_len(buf)
+    let mut pos: i64 = 0
+    while pos < n {
+        // четем hex размера до CRLF
+        let mut size_str = ""
+        while pos < n && bytes_at(buf, pos) != 13 {
+            size_str = concat(size_str, byte_chr(bytes_at(buf, pos)))
+            pos = pos + 1
+        }
+        // прескачаме CRLF след размера
+        if pos < n && bytes_at(buf, pos) == 13 { pos = pos + 1 }
+        if pos < n && bytes_at(buf, pos) == 10 { pos = pos + 1 }
+        let mut sz = s3_parse_hex(size_str)
+        if sz <= 0 {
+            break  // последният chunk (0) или грешка
+        }
+        if pos + sz > n {
+            sz = n - pos  // safety
+        }
+        out = bytes_concat(out, bytes_slice(buf, pos, pos + sz))
+        pos = pos + sz
+        // прескачаме CRLF след данните
+        if pos < n && bytes_at(buf, pos) == 13 { pos = pos + 1 }
+        if pos < n && bytes_at(buf, pos) == 10 { pos = pos + 1 }
+    }
+    return out
+}
+
+fn s3_parse_hex(s: str) -> i64 {
+    let mut v: i64 = 0
+    let mut i: i64 = 0
+    let n = len(s)
+    while i < n {
+        let c = char_at(s, i)
+        let mut d: i64 = 0 - 1
+        if c >= 48 && c <= 57 { d = c - 48 }
+        else if c >= 97 && c <= 102 { d = c - 87 }
+        else if c >= 65 && c <= 70 { d = c - 55 }
+        else { break }
+        v = v * 16 + d
+        i = i + 1
+    }
+    return v
 }
 
 fn s3_read_tcp(fd: i64) -> bytes !Net !IO {

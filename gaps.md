@@ -7,9 +7,11 @@
 `http_request` cannot carry a null byte. This package writes the request
 as `bytes` over TCP/TLS instead.
 
-### A3 — no chunked bodies
+### A3 — ~~no chunked bodies~~ — closed 2026-10-31
 
-The response is read to EOF. `Content-Length` trims the body when present.
+`s3_parse` детектира `Transfer-Encoding: chunked` и декодира през
+`s3_decode_chunked` (hex размер + CRLF + данни + CRLF, терминиращ 0-chunk).
+Content-Length пътят остава за non-chunked отговори.
 
 ## Closed
 

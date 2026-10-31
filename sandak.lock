@@ -1,0 +1,13 @@
+# sandak.lock — генериран от sandak, не редактирай
+
+[[package]]
+name = "s3baga"
+version = "0.1.0"
+source = "path+."
+rev = "-"
+
+[[package]]
+name = "std"
+version = "0.7.0"
+source = "path+/home/ziko/ytgit/baga-lang/std"
+rev = "-"
