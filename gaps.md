@@ -2,10 +2,12 @@
 
 ## Open
 
-### A1 — std HTTP client bodies are `str`
+### A1 — ~~std HTTP client bodies are `str`~~ — closed 2026-10-31
 
-`http_request` cannot carry a null byte. This package writes the request
-as `bytes` over TCP/TLS instead.
+`http_build_request_bytes` + `http_request_bytes` в std/net/http_client.baga:
+хедъри като str, тяло като `bytes` (с null байтове). Content-Length от
+`bytes_len`. Plain и TLS варианти. Този пакет продължава с raw TCP за S3,
+но std клиентът вече носи binary bodies.
 
 ### A3 — ~~no chunked bodies~~ — closed 2026-10-31
 
