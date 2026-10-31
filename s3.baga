@@ -232,29 +232,65 @@ struct S3Cfg {
     access: str,
     secret: str,
     region: str,
-    timeout_s: i64
+    timeout_s: i64,
+    style: str
 }
 
 fn s3_cfg(endpoint: str, bucket: str, access: str, secret: str, region: str, timeout_s: i64) -> S3Cfg {
+    return s3_cfg_style(endpoint, bucket, access, secret, region, timeout_s, "path")
+}
+
+fn s3_cfg_style(endpoint: str, bucket: str, access: str, secret: str, region: str, timeout_s: i64, style: str) -> S3Cfg {
     return S3Cfg {
         endpoint: endpoint,
         bucket: bucket,
         access: access,
         secret: secret,
         region: region,
-        timeout_s: timeout_s
+        timeout_s: timeout_s,
+        style: style
     }
 }
 
 fn s3_cfg_env() -> S3Cfg !IO {
-    return s3_cfg(
+    let st = str_trim(env("S3_STYLE")?)
+    let mut style = "path"
+    if st == "virtual" || st == "vhost" {
+        style = "virtual"
+    }
+    return s3_cfg_style(
         str_trim(env("S3_ENDPOINT")?),
         str_trim(env("S3_BUCKET")?),
         env("S3_ACCESS_KEY")?,
         env("S3_SECRET_KEY")?,
         s3_region()?,
-        s3_timeout()?
+        s3_timeout()?,
+        style
     )
+}
+
+struct S3Route {
+    host: str,
+    uri: str
+}
+
+// A2 (closed): virtual-hosted style — host = bucket.endpoint_host, uri = /key.
+// Path style (default): host = endpoint_host, uri = /bucket/key.
+fn s3_resolve(cfg: S3Cfg, u: HttpUrl, key: str) -> S3Route {
+    let b = str_trim(cfg.bucket)
+    if cfg.style == "virtual" {
+        let vhost = concat(concat(b, "."), u.host)
+        let host = s3_host_header(vhost, u.port, u.https)
+        if key == "" {
+            return S3Route { host: host, uri: "/" }
+        }
+        return S3Route { host: host, uri: concat("/", key) }
+    }
+    let host = s3_host_header(u.host, u.port, u.https)
+    if key == "" {
+        return S3Route { host: host, uri: concat("/", b) }
+    }
+    return S3Route { host: host, uri: concat(concat(concat("/", b), "/"), key) }
 }
 
 fn s3_call_cfg(cfg: S3Cfg, method: str, key: str, body: bytes) -> S3Out !Net !IO !Random !Time {
@@ -277,8 +313,9 @@ fn s3_call_cfg(cfg: S3Cfg, method: str, key: str, body: bytes) -> S3Out !Net !IO
     if timeout < 1 {
         timeout = 30
     }
-    let host = s3_host_header(u.host, u.port, u.https)
-    let uri = concat(concat(concat("/", bucket), "/"), key)
+    let route = s3_resolve(cfg, u, key)
+    let host = route.host
+    let uri = route.uri
     let amz = s3_amz_date(time_now_ms() / 1000)
     let ph = s3_payload_hash(body)
     let auth = s3_authorization(access, secret, region, method, uri, host, amz, ph)
@@ -379,8 +416,9 @@ fn s3_get_query(cfg: S3Cfg, query: str) -> S3Out !Net !IO !Random !Time {
     if timeout < 1 {
         timeout = 30
     }
-    let host = s3_host_header(u.host, u.port, u.https)
-    let uri = concat("/", bucket)
+    let route = s3_resolve(cfg, u, "")
+    let host = route.host
+    let uri = route.uri
     let body = bytes_new(0)
     let amz = s3_amz_date(time_now_ms() / 1000)
     let ph = s3_payload_hash(body)

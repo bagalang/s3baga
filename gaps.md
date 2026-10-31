@@ -7,10 +7,14 @@
 `http_request` cannot carry a null byte. This package writes the request
 as `bytes` over TCP/TLS instead.
 
-### A2 — path-style only
-
-`S3_ENDPOINT/bucket/key`. No virtual-hosted `bucket.s3.amazonaws.com`.
-
 ### A3 — no chunked bodies
 
 The response is read to EOF. `Content-Length` trims the body when present.
+
+## Closed
+
+### A2 — virtual-hosted style — closed 2026-10-31
+
+`S3_STYLE=virtual` (or `vhost`): host = `bucket.endpoint_host`, uri = `/key`.
+Default `path`: host = endpoint host, uri = `/bucket/key`. Signing uses the
+resolved host/uri, so SigV4 is correct for both styles.
